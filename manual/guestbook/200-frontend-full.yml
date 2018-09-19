@@ -1,0 +1,55 @@
+# Guestbook frontend application
+# - connects to redis-master for writes
+# - connects to redis-slave for reads
+
+# ------------------- frontend Service ------------------- #
+kind: Service
+apiVersion: v1
+metadata:
+  name: frontend
+  namespace: guestbook
+  labels:
+    app: guestbook
+    tier: frontend
+spec:
+  type: NodePort
+  selector:
+    app: guestbook
+    tier: frontend
+  ports:
+  - port: 80
+---
+
+# ------------------- frontend Deployment ------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: guestbook
+  labels:
+    app: guestbook
+spec:
+  # selector will select any templates with specific attributes to become part of deployment/ReplicaSet
+  selector:
+    matchLabels:
+      app: guestbook
+      tier: frontend
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: guestbook
+        tier: frontend
+    spec:
+      containers:
+      - name: php-redis
+        image: gcr.io/google-samples/gb-frontend:v4
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        env:
+          - name: GET_HOSTS_FROM
+            value: dns
+        ports:
+        - containerPort: 80

@@ -1,0 +1,102 @@
+# Prometheus Alertmanager
+
+# ------------------- Alertmanager Servcice ------------------- #
+kind: Service
+apiVersion: v1
+metadata:
+  name: prometheus-alertmanager
+  namespace: monitoring
+spec:
+  type: NodePort
+  ports:
+  - port: 9093
+    targetPort: 9093
+    nodePort: 30903
+  selector:
+    app: alertmanager
+---
+
+# ------------------- Alertmanager ConfigMap: alertmanager.yml ------------------- #
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: prometheus-alertmanager
+  namespace: monitoring
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: 'mailhog.monitoring.svc.cluster.local:1025'
+      smtp_from: 'alertmanager@k8s-exxeta.com'
+      smtp_require_tls: false
+      smtp_hello: 'k8s-alertmanager'
+    # Default route
+    route:
+      group_by: [cluster, alertname, resource, severity]
+
+      # Default receiver
+      receiver: test-emails
+
+      # Child routes
+      routes:
+        
+      # Creating a rule for CPU related alerts
+      - match_re:
+          resource: ^cpu$
+        receiver: cpu-mails
+
+        # Sub route for critical CPU alerts
+        routes:
+        - match:
+            severity: critical
+          receiver: crit-mails
+
+    # Setting different receivers
+    receivers:
+    - name: 'test-emails'
+      email_configs:
+      - to: 'test-emails@example.com'
+    - name: 'cpu-mails'
+      email_configs:
+      - to: 'cpu-mails@example.com'
+    - name: 'crit-mails'
+      email_configs:
+      - to: 'crit-mails@example.com'
+---
+
+# ------------------- Alertmanager Deployment ------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-alertmanager
+  namespace: monitoring
+  labels:
+    app: alertmanager
+spec:
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      name: alertmanager
+      labels:
+        app: alertmanager
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9093"
+        prometheus.io/part_of: "true"
+    spec:
+      containers:
+      - name: alertmanager
+        image: prom/alertmanager:v0.15.2
+        ports:
+        - containerPort: 9093
+        volumeMounts:
+          - name: alertmanager-rules
+            mountPath: /etc/alertmanager
+      volumes:
+        - name: alertmanager-rules
+          configMap: 
+            name: prometheus-alertmanager
+
+

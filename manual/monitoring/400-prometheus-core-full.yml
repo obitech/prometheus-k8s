@@ -1,0 +1,392 @@
+## Simple Prometheus deployment + service
+# See https://sysdig.com/blog/kubernetes-monitoring-prometheus/ for more info
+
+# ------------------- Create ConfigMap with prometheus.yml ------------------- #
+# 1. Download/create and place next to this file as prometheus.yml
+# 2. kubectl create cm prometheus-core --from-file=prometheus.yml
+
+# ------------------- Prometheus Server Service ------------------- #
+kind: Service
+apiVersion: v1
+metadata:
+  name: prometheus-core
+  namespace: monitoring
+spec:
+  type: NodePort
+  ports:
+  - name: promui
+    protocol: TCP
+    port: 9090
+    targetPort: 9090
+    nodePort: 30909
+  selector:
+    app: prometheus
+---
+
+# ------------------- Prometheus ConfigMap: prometheus.yml ------------------- #
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: prometheus-core
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      scrape_timeout: 10s
+      evaluation_interval: 30s
+    
+    rule_files:
+      - "basic_alerts.yml"
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+          - targets: ["prometheus-alertmanager.monitoring.svc.cluster.local:9093"]
+
+    scrape_configs:
+    # ------------------- Prometheus Server ------------------- #
+    - job_name: 'prometheus-core'
+      static_configs:
+        - targets: ['localhost:9090']
+          
+    # ------------------- Prometheus Pushgateways ------------------- #
+    - job_name: 'prometheus-pushgateway'
+      kubernetes_sd_configs:
+      - role: pod
+
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: .*pushgateway.*
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+
+    # ------------------- Prometheus Alertmanagers ------------------- #
+    - job_name: 'prometheus-alertmanager'
+      kubernetes_sd_configs:
+      - role: pod
+
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: .*alertmanager.*
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+   
+    # -------------------Prometheus node exporter ------------------- #
+    - job_name: prometheus-node-exporter
+      kubernetes_sd_configs:
+        - role: pod
+      relabel_configs: 
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: keep
+          regex: .*node-exporter.*
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name  
+
+    # ------------------- Grafana ------------------- #
+    - job_name: 'grafana'
+      kubernetes_sd_configs:
+      - role: pod
+
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: .*grafana.*
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+   
+    # ------------------- Kubernetes API-Servers ------------------- #
+    - job_name: 'kubernetes-apiservers'
+      kubernetes_sd_configs:
+      - role: endpoints
+
+      scheme: https
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+    # ------------------- Nodes (kubelet) ------------------- #
+    - job_name: 'kubernetes-kubelets'
+      scheme: https
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      
+      kubernetes_sd_configs:
+      - role: node
+
+      relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics
+
+    # ------------------- Nodes (cAdvisor) ------------------- # 
+    - job_name: 'kubernetes-cadvisor'
+      scheme: https
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    
+      kubernetes_sd_configs:
+      - role: node
+    
+      relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+
+    # ------------------- Pods ------------------- #
+    - job_name: 'kubernetes-pods'
+
+      kubernetes_sd_configs:
+        - role: pod
+
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        # Prom components will get extra jobs
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_part_of]
+          action: drop
+          regex: true
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+
+    # ------------------- kube-dns (kube-system) ------------------- #
+    - job_name: kubernetes-dns
+      kubernetes_sd_configs:
+        - role: pod
+
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_pod_label_k8s_app]
+          action: keep
+          regex: kube-system;kube-dns
+        
+        - source_labels: [__address__]
+          action: drop
+          regex: .*:53|.*:10053
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+        - source_labels: [__meta_kubernetes_container_name]
+          action: replace
+          target_label: kubernetes_container_name
+
+    # ------------------- etcd (kube-system) ------------------- #
+    - job_name: kubernetes-etcd
+      kubernetes_sd_configs:
+        - role: pod
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_pod_label_component]
+          action: keep
+          regex: kube-system;etcd  
+        - source_labels: [__address__]
+          action: replace
+          regex: ([^:]+)(?::\d+)?
+          replacement: $1:10255
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+        - source_labels: [__meta_kubernetes_container_name]
+          action: replace
+          target_label: kubernetes_container_name
+
+    # ------------------- Kube State Metrics ------------------- #
+    - job_name: kube-state-metrics
+      static_configs:
+        - targets: ["kube-state-metrics.monitoring.svc.cluster.local:8080"]
+
+  basic_alerts.yml: |
+    groups:
+    - name: InstanceAvailability
+      rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Instance {{ $labels.instance }} down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute."
+    
+    - name: NodeCPU
+      rules:
+      - alert: HighNodeCPUUsageTotal
+        expr: avg( ( ( sum by (instance) ( rate(node_cpu_seconds_total[1m]) ) - sum by (instance) ( rate(node_cpu_seconds_total{mode="idle"}[1m]) ) ) * 100 ) / scalar( count( sum by (instance, cpu) (node_cpu_seconds_total) ) ) ) > 75
+        for: 2m
+        labels:
+          severity: high
+          resource: cpu
+        annotations:
+          summary: "High CPU Load on {{ $labels.instance }}"
+          description: "Total CPU usage of instance {{ $labels.instance }} has been >75% for over 2m."
+      
+      - alert: CriticalNodeCPUUsageTotal
+        expr: avg( ( ( sum by (instance) ( rate(node_cpu_seconds_total[1m]) ) - sum by (instance) ( rate(node_cpu_seconds_total{mode="idle"}[1m]) ) ) * 100 ) / scalar( count( sum by (instance, cpu) (node_cpu_seconds_total) ) ) ) > 90
+        for: 2m
+        labels:
+          severity: critical
+          resource: cpu
+        annotations:
+          summary: "Critical CPU Load on {{ $labels.instance }}"
+          description: "Total CPU usage of instance {{ $labels.instance }} has been >90% for over 2m."
+    
+    - name: NodeMemory
+      rules:
+      - alert: LowNodeMemoryAvailability
+        expr: avg by (instance) ((node_memory_MemAvailable_bytes*100) / node_memory_MemTotal_bytes) < 20
+        for: 5m
+        labels:
+          severity: high
+          resource: mem
+        annotations:
+          summary: "High Memory Usage on {{ $labels.instance }}"
+          description: "Instance {{ $labels.instance }} has had less <20% memory available for over 5m."
+      
+      - alert: CriticalNodeMemoryAvailability
+        expr: avg by (instance) ((node_memory_MemAvailable_bytes*100) / node_memory_MemTotal_bytes) < 20
+        for: 5m
+        labels:
+          severity: critical
+          resource: mem
+        annotations:
+          summary: "Critical Memory Usage on {{ $labels.instance }}"
+          description: "Instance {{ $labels.instance }} has had less <10% memory available for over 5m."
+      
+      - alert: HighNodeMemoryActive
+        expr: avg by (instance) ((node_memory_Active_bytes * 100) / node_memory_MemTotal_bytes) > 80
+        for: 5m
+        labels:
+          severity: high
+          resource: mem
+        annotations:
+          summary: "High Active Memory Usage on {{ $labels.instance }}"
+          description: "Total active memory usage of instance {{ $labels.instance }} has been >80% for over 5m."
+      
+      - alert: CriticalNodeMemoryActive
+        expr: avg by (instance) ((node_memory_Active_bytes * 100) / node_memory_MemTotal_bytes) > 90
+        for: 5m
+        labels:
+          severity: critical
+          resource: mem
+        annotations:
+          summary: "Critical Active Memory Usage on {{ $labels.instance }}"
+          description: "Total active memory usage of instance {{ $labels.instance }} has been >90% for over 5m."
+    
+    - name: NodeNetwork
+      rules:
+      - alert: HighNodeNetworkIncrease
+        expr: sum by (instance) (rate(node_network_receive_bytes_total{device!="lo"}[1m]) ) / sum by (instance) (rate(node_network_receive_bytes_total{device!="lo"}[5m]) ) > 2
+        for: 5m
+        labels:
+          severity: high
+          resource: net
+        annotations:
+          summary: "Increased Rx Network traffic on {{ $labels.instace }}"
+          description: "Rate of Rx Network Traffic on instance {{ $labels.instance }} has increased by factor 2 over the past 5m."
+---
+
+# ------------------- Prometheus Server Deployment ------------------- #
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: prometheus-core
+  namespace: monitoring
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      name: prometheus
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.3.2
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+          - name: config-volume
+            mountPath: /etc/prometheus
+      volumes:  
+        - name: config-volume
+          configMap:
+            name: prometheus-core

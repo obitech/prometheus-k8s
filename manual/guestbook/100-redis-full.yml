@@ -1,0 +1,145 @@
+## Writable redis master to store guestbook info
+# - frontend writes to master
+# - frontend reads from slaves
+
+# ------------------- redis-master Service ------------------- #
+kind: Service
+apiVersion: v1
+metadata:
+  name: redis-master
+  namespace: guestbook
+  labels:
+    app: redis
+    role: master
+    tier: backend
+spec:
+  selector:
+    app: redis
+    role: master
+    tier: backend
+  ports:
+  - name: redis
+    protocol: TCP
+    port: 6379
+    targetPort: 6379
+  - name: prom
+    protocol: TCP
+    port: 9121
+    targetPort: 9121
+---
+
+# ------------------- redis-master Deployment ------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-master
+  namespace: guestbook
+  labels:
+    app: redis
+spec:
+  selector:
+    matchLabels:
+      app: redis
+      role: master
+      tier: backend
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: master
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      containers:
+      - name: master
+        image: k8s.gcr.io/redis:e2e
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - containerPort: 6379
+      - name: redis-exporter-slave
+        image: oliver006/redis_exporter:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - containerPort: 9121
+---
+
+# ------------------- redis-slave Service ------------------- #
+kind: Service
+apiVersion: v1
+metadata:
+  name: redis-slave
+  namespace: guestbook
+  labels:
+    app: redis
+    role: slave
+    tier: backend
+spec:
+  selector:
+    app: redis
+    role: slave
+    tier: backend
+  ports:
+  - name: redis
+    protocol: TCP
+    port: 6379
+    targetPort: 6379
+  - name: prom
+    protocol: TCP
+    port: 9121
+    targetPort: 9121
+---
+
+# ------------------- redis-slave Deployment ------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-slave
+  namespace: guestbook
+  labels:
+    app: redis
+spec:
+  selector:
+    matchLabels:
+      app: redis
+      role: slave
+      tier: backend
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: slave
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      containers:
+      - name: redis
+        image: gcr.io/google_samples/gb-redisslave:v1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        env:
+          - name: GET_HOSTS_FROM
+            value: dns
+        ports:
+        - containerPort: 6379
+      - name: redis-exporter-slave
+        image: oliver006/redis_exporter:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - containerPort: 9121

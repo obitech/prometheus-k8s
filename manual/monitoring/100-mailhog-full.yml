@@ -1,0 +1,45 @@
+# SMTP Debugging Server
+
+# ------------------- Mailhog Service ------------------- #
+kind: Service
+apiVersion: v1
+metadata:
+  name: mailhog
+  namespace: monitoring
+spec:
+  selector:
+    app: mailhog
+  ports:
+  - name: smtp
+    nodePort: 31025
+    port: 1025
+    targetPort: 1025
+  - name: webui
+    nodePort: 32025
+    port: 8025
+    targetPort: 8025
+  type: NodePort
+---
+
+# ------------------- Mailhog Deployment ------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailhog
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mailhog
+  template:
+    metadata:
+      labels:
+        app: mailhog
+    spec:
+      containers:
+      - name: mailhog
+        image: mailhog/mailhog
+        ports:
+        - containerPort: 1025
+        - containerPort: 8025

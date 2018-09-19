@@ -1,0 +1,83 @@
+# ------------------- Grafana Service ------------------- #
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    app: grafana
+spec:
+  type: NodePort
+  ports:
+    - name: webui
+      port: 3000
+      targetPort: 3000
+      nodePort: 30300 
+  selector:
+    app: grafana
+---
+
+# ------------------- Grafana Deployment ------------------- #
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: grafana
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/part_of: "true"
+    spec:
+      containers:
+      - image: grafana/grafana:5.1.0
+        name: grafana
+        imagePullPolicy: IfNotPresent
+        resources:
+          # keep request = limit to keep this container in guaranteed class
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        env:
+          # The following env variables set up basic auth twith the default admin user and admin password.
+          - name: GF_AUTH_BASIC_ENABLED
+            value: "true"
+          - name: GF_AUTH_ANONYMOUS_ENABLED
+            value: "false"
+          - name: GF_PATHS_PROVISIONING
+            value: "/srv/provisioning"
+        readinessProbe:
+          httpGet:
+            path: /login
+            port: 3000
+        volumeMounts:
+        - name: grafana-persistent-storage
+          mountPath: /var/lib/grafana
+        - name: grafana-datasources
+          mountPath: /srv/provisioning/datasources
+        - name: grafana-dashboards-config
+          mountPath: /srv/provisioning/dashboards
+        - name: grafana-dashboards
+          mountPath: /srv/provisioning/import/dashboards
+      volumes:
+      - name: grafana-persistent-storage
+        emptyDir: {}
+      - name: grafana-datasources
+        configMap:
+          name: grafana-datasources
+      - name: grafana-dashboards-config
+        configMap:
+          name: grafana-dashboards-config
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboards      
