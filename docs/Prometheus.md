@@ -1,12 +1,19 @@
 # Prometheus
 
-- [Overview](#overview)
-- [Configuration](#configuration)
-- [Getting Metrics](#getting-metrics)
-- [Alerting](#alerting)
-- [Pushgateway](#pushgateway)
-- [Storage](#storage)
-- [Federation](#federation)
+- [Prometheus](#prometheus)
+  - [Overview](#overview)
+    - [What?](#what)
+    - [Why?](#why)
+    - [How?](#how)
+      - [Data model](#data-model)
+      - [Architecture](#architecture)
+  - [Configuration](#configuration)
+  - [Getting Metrics](#getting-metrics)
+    - [Example](#example)
+  - [Alerting](#alerting)
+  - [Pushgateway](#pushgateway)
+  - [Storage](#storage)
+  - [Federation](#federation)
 
 ## Overview
 ### What?
@@ -207,7 +214,7 @@ sum by (instance)
 ![Displaying the sample query narrowing down time series, with rate modifier](assets/sample-query-6.png "A graph of a query to display a single time series of total CPU consumption. Time series are summed up over the total amout of corse and displayed as averages over a period of time.")
 
 ## [Alerting](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)
-Alert rules are written in PromQL and defined as YAML files that are imported via Prometheus's `prometheus.yml`. Rules files use go-templates to populate the notification text. Alerts should be labeled for further processing.
+Alert rules are written in PromQL and defined as YAML files that are imported via Prometheus's `prometheus.yml`. Rule files use go-templates to populate the notification text. Alerts should be labeled for further processing.
 
 The following example will fire an alert if total CPU usage on a node has been above 75% for over 2 minutes:
 
@@ -252,7 +259,7 @@ In the following example, Alertmanager will pick up alerts matching the `resourc
 
 global:
   smtp_smarthost: 'mailhog.monitoring.svc.cluster.local:1025'
-  smtp_from: 'alertmanager@exxeta.com'
+  smtp_from: 'alertmanager@example.com'
   smtp_require_tls: false
   smtp_hello: 'k8s-alertmanager'
 
