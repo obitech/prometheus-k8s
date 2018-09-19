@@ -5,7 +5,7 @@ This repo holds resources about Prometheus, specifically how to monitor a Kubern
 
 General documentation, overviews and tutorials.
 
-## manual/
+## [manual/](https://github.com/obitech/prometheus-k8s/tree/master/manual)
 
 Deploy a Prometheus stack "manually", without [Helm](https://www.helm.sh/) or [Kapitan](https://kapitan.dev).
 
