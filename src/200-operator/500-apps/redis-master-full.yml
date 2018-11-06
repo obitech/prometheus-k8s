@@ -1,0 +1,68 @@
+# ------------------- Sample App Service ------------------- #
+kind: Service
+apiVersion: v1
+metadata:
+  name: redis-example
+  labels:
+    app: redis-example
+spec:
+  selector:
+    app: redis-example
+  ports:
+  - name: redis
+    port: 6379
+  - name: web
+    port: 9121
+---
+
+# ------------------- redis-master Deployment ------------------- #
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-example
+  labels:
+    app: redis-example
+spec:
+  selector:
+    matchLabels:
+      app: redis-example
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: redis-example
+    spec:
+      containers:
+      - name: redis-master
+        image: k8s.gcr.io/redis:e2e
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - name: redis
+          containerPort: 6379
+      - name: redis-exporter
+        image: oliver006/redis_exporter:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - name: web
+          containerPort: 9121
+---
+
+# ------------------- Sample App Service Monitor ------------------- #
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-example
+  labels:
+    team: frontend
+spec:
+  selector:
+    matchLabels:
+      app: redis-example
+  endpoints:
+  - port: web

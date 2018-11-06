@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: push-job
+data:
+  push-job.sh: |
+    #!/usr/bin/env bash
+    cat << EOF | curl --data-binary @- http://prometheus-pushgateway.monitoring.svc.cluster.local:9091/metrics/job/example_job
+    # TYPE test_push_counter counter
+    # HELP test_push_counter An example counter
+    test_push_counter{test_push_label="foo"} 42
+    # TYPE test_push_gauge gauge
+    # HELP test_push_gauge An example gauge
+    test_push_gauge{test_push_label="bar", function="demo"} 123.45
+    EOF
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name:  push-job
+spec:
+  template:
+    metadata:
+      name:  push-job
+    spec:
+      restartPolicy: Never
+      containers: 
+      - name: push-job
+        image: obitech/docker-tools
+        volumeMounts:
+          - mountPath: /workdir
+            name: push-job
+        command: ["bash", "/workdir/push-job.sh"]
+      volumes:
+        - name: push-job
+          configMap:
+            name: push-job
+      

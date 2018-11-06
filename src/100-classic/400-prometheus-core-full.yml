@@ -53,6 +53,9 @@ data:
           
     # ------------------- Prometheus Pushgateways ------------------- #
     - job_name: 'prometheus-pushgateway'
+      # Setting this to true, so job label will not get overridden
+      # See: https://github.com/prometheus/pushgateway#about-the-job-and-instance-labels
+      honor_labels: true
       kubernetes_sd_configs:
       - role: pod
 
@@ -60,14 +63,6 @@ data:
       - source_labels: [__meta_kubernetes_pod_name]
         action: keep
         regex: .*pushgateway.*
-      - action: labelmap
-        regex: __meta_kubernetes_pod_label_(.+)
-      - source_labels: [__meta_kubernetes_namespace]
-        action: replace
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: kubernetes_pod_name
 
     # ------------------- Prometheus Alertmanagers ------------------- #
     - job_name: 'prometheus-alertmanager'
@@ -286,23 +281,23 @@ data:
       rules:
       - alert: HighNodeCPUUsageTotal
         expr: avg( ( ( sum by (instance) ( rate(node_cpu_seconds_total[1m]) ) - sum by (instance) ( rate(node_cpu_seconds_total{mode="idle"}[1m]) ) ) * 100 ) / scalar( count( sum by (instance, cpu) (node_cpu_seconds_total) ) ) ) > 75
-        for: 2m
+        for: 1m
         labels:
           severity: high
           resource: cpu
         annotations:
           summary: "High CPU Load on {{ $labels.instance }}"
-          description: "Total CPU usage of instance {{ $labels.instance }} has been >75% for over 2m."
+          description: "Total CPU usage of instance {{ $labels.instance }} has been >75% for over 1m."
       
       - alert: CriticalNodeCPUUsageTotal
         expr: avg( ( ( sum by (instance) ( rate(node_cpu_seconds_total[1m]) ) - sum by (instance) ( rate(node_cpu_seconds_total{mode="idle"}[1m]) ) ) * 100 ) / scalar( count( sum by (instance, cpu) (node_cpu_seconds_total) ) ) ) > 90
-        for: 2m
+        for: 1m
         labels:
           severity: critical
           resource: cpu
         annotations:
           summary: "Critical CPU Load on {{ $labels.instance }}"
-          description: "Total CPU usage of instance {{ $labels.instance }} has been >90% for over 2m."
+          description: "Total CPU usage of instance {{ $labels.instance }} has been >90% for over 1m."
     
     - name: NodeMemory
       rules:
@@ -349,7 +344,7 @@ data:
     - name: NodeNetwork
       rules:
       - alert: HighNodeNetworkIncrease
-        expr: sum by (instance) (rate(node_network_receive_bytes_total{device!="lo"}[1m]) ) / sum by (instance) (rate(node_network_receive_bytes_total{device!="lo"}[5m]) ) > 2
+        expr: sum by (instance) (rate(node_network_receive_bytes_total{device!="lo"}[1m]) ) / sum by (instance) (rate(node_network_receive_bytes_total{device!="lo"}[5m]) ) > 5
         for: 5m
         labels:
           severity: high

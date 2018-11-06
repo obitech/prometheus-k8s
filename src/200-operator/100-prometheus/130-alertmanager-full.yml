@@ -1,0 +1,68 @@
+# You can create the secret manually with:
+# kubectl create secret generic alertmanager-main --from-file=alertmanager.yml -n monitoring
+# ------------------- Alertmanager Secret ------------------- #
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alertmanager-main
+  namespace: monitoring
+type: Opaque
+data:
+  alertmanager.yaml: Z2xvYmFsOgogIHNtdHBfc21hcnRob3N0OiAnbWFpbGhvZy5tb25pdG9yaW5nLnN2Yy5jbHVzdGVyLmxvY2FsOjEwMjUnCiAgc210cF9mcm9tOiAnYWxlcnRtYW5hZ2VyQGs4cy1leHhldGEuY29tJwogIHNtdHBfcmVxdWlyZV90bHM6IGZhbHNlCiAgc210cF9oZWxsbzogJ2s4cy1hbGVydG1hbmFnZXInCiAgCiMgRGVmYXVsdCByb3V0ZQpyb3V0ZToKICBncm91cF9ieTogW2NsdXN0ZXIsIGFsZXJ0bmFtZSwgcmVzb3VyY2UsIHNldmVyaXR5XQoKICAjIERlZmF1bHQgcmVjZWl2ZXIKICByZWNlaXZlcjogdGVzdC1lbWFpbHMKCiAgIyBDaGlsZCByb3V0ZXMKICByb3V0ZXM6CiAgICAKICAjIENyZWF0aW5nIGEgcnVsZSBmb3IgQ1BVIHJlbGF0ZWQgYWxlcnRzCiAgLSBtYXRjaF9yZToKICAgICAgcmVzb3VyY2U6IF5jcHUkCiAgICByZWNlaXZlcjogY3B1LW1haWxzCgogICAgIyBTdWIgcm91dGUgZm9yIGNyaXRpY2FsIENQVSBhbGVydHMKICAgIHJvdXRlczoKICAgIC0gbWF0Y2g6CiAgICAgICAgc2V2ZXJpdHk6IGNyaXRpY2FsCiAgICAgIHJlY2VpdmVyOiBjcml0LW1haWxzCgojIFNldHRpbmcgZGlmZmVyZW50IHJlY2VpdmVycwpyZWNlaXZlcnM6Ci0gbmFtZTogJ3Rlc3QtZW1haWxzJwogIGVtYWlsX2NvbmZpZ3M6CiAgLSB0bzogJ3Rlc3QtZW1haWxzQGV4YW1wbGUuY29tJwotIG5hbWU6ICdjcHUtbWFpbHMnCiAgZW1haWxfY29uZmlnczoKICAtIHRvOiAnY3B1LW1haWxzQGV4YW1wbGUuY29tJwotIG5hbWU6ICdjcml0LW1haWxzJwogIGVtYWlsX2NvbmZpZ3M6CiAgICAtIHRvOiAnY3JpdC1tYWlsc0BleGFtcGxlLmNvbSc=
+---
+
+# ------------------- Alertmanager ServiceAccount ------------------- #
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alertmanager-main
+  namespace: monitoring
+---
+
+# ------------------- Alertmanager Service ------------------- #
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-main
+  namespace: monitoring
+  labels:
+    app: alertmanager-main
+spec:
+  type: NodePort
+  ports:
+  - name: web
+    nodePort: 30903
+    port: 9093
+    protocol: TCP
+    targetPort: web
+  selector:
+    alertmanager: main
+---
+
+# ------------------- Alertmanager Cluster ------------------- #
+apiVersion: monitoring.coreos.com/v1
+kind: Alertmanager
+metadata:
+  name: main
+  namespace: monitoring
+  labels:
+    app: alertmanager-main
+spec:
+  replicas: 1
+  baseImage: quay.io/prometheus/alertmanager
+  version: v0.15.2
+  serviceAccountName: alertmanager-main
+---
+
+# ------------------- Alertmanager Service Monitor ------------------- #
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: alertmanager-main
+  namespace: monitoring
+spec: 
+  selector:
+    matchLabels:
+      app: alertmanager-main
+  endpoints:
+  - port: web
